@@ -1,4 +1,3 @@
-HEADING ===
 ##Hidden Markov Model for Gene Identification
 
 ##Overview
