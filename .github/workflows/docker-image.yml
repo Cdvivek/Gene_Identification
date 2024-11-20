@@ -1,5 +1,4 @@
 name: Gene Identification CI/CD
-
 on:
   push:
     branches: [ "master" ]
@@ -15,29 +14,42 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.10.13'
     
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f Requirements.txt ]; then
-          pip install -r Requirements.txt
-        else
-          echo "Requirements.txt not found"
-          exit 1
-        fi
+        pip install -r Requirements.txt
+        pip install pytest pytest-notebook
+
+    - name: Create test data
+      run: |
+        python - <<EOF
+        import pandas as pd
+        import numpy as np
         
-        # Install additional dependencies for notebook testing
-        pip install nbconvert jupyter pytest-notebook
+        # Create synthetic test data with similar structure to your real data
+        # Modify this according to your actual data structure
+        test_data = pd.DataFrame({
+            'sequence': ['ATCG', 'GCTA', 'TGCA'],
+            'label': ['gene1', 'gene2', 'gene3'],
+            'score': np.random.random(3)
+            # Add other columns as needed
+        })
+        
+        # Save test data
+        test_data.to_csv('data_cleaned.csv', index=False)
+        print("Test data created successfully")
+        EOF
     
     - name: Run Python tests
       run: |
-        # Test the main application
-        python -m pytest app.py
+        PYTHONPATH=$PYTHONPATH:$(pwd) pytest app.py -v
         
-        # Convert and test notebook
         jupyter nbconvert --to python GeneIdentification.ipynb
-        python -m pytest GeneIdentification.py
+        PYTHONPATH=$PYTHONPATH:$(pwd) pytest GeneIdentification.py
+
+  
 
   build-and-push:
     needs: test
