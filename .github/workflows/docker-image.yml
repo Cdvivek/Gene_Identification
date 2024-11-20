@@ -13,9 +13,21 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5  # Updated to v5 to resolve node deprecation
       with:
         python-version: '3.10'
+    
+    - name: Create requirements.txt
+      run: |
+        cat > requirements.txt << 'EOL'
+        numpy>=1.20.0
+        scipy>=1.7.0
+        pandas>=1.3.0
+        biopython>=1.79
+        pytest>=6.0.0
+        pytest-cov>=2.12.0
+        # Add any other dependencies your project needs
+        EOL
     
     - name: Run tests
       run: |
@@ -27,6 +39,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Create Dockerfile if not exists
+      run: |
+        if [ ! -f Dockerfile ]; then
+          cat > Dockerfile << 'EOL'
+          FROM python:3.10-slim
+          
+          WORKDIR /app
+          
+          # Install system dependencies
+          RUN apt-get update && apt-get install -y \
+              gcc \
+              g++ \
+              && rm -rf /var/lib/apt/lists/*
+          
+          # Copy requirements first to leverage Docker cache
+          COPY requirements.txt .
+          RUN pip install --no-cache-dir -r requirements.txt
+          
+          # Copy the rest of the application
+          COPY . .
+          
+          # Set Python path
+          ENV PYTHONPATH=/app
+          
+          CMD ["python", "./src/main.py"]
+          EOL
+        fi
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -47,7 +87,7 @@ jobs:
           ${{ secrets.DOCKER_USERNAME }}/gene-hmm:${{ github.sha }}
         cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-hmm:buildcache
         cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-hmm:buildcache,mode=max
-
+        
     - name: Run smoke test
       run: |
         docker run ${{ secrets.DOCKER_USERNAME }}/gene-hmm:${{ github.sha }} python -c "import bio_hmm; print('Smoke test passed')"
