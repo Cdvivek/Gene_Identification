@@ -1,4 +1,4 @@
-name: Docker CI/CD
+name: Gene Identification CI/CD
 
 on:
   push:
@@ -17,58 +17,33 @@ jobs:
       with:
         python-version: '3.10'
     
-    - name: Create project structure
+    - name: Install dependencies
       run: |
-        # Create necessary directories
-        mkdir -p src/bio_hmm tests
+        python -m pip install --upgrade pip
+        if [ -f Requirements.txt ]; then
+          pip install -r Requirements.txt
+        else
+          echo "Requirements.txt not found"
+          exit 1
+        fi
         
-        # Create basic test file
-        cat > tests/test_bio_hmm.py << 'EOL'
-        def test_basic():
-            assert True
-        EOL
+        # Install additional dependencies for notebook testing
+        pip install nbconvert jupyter pytest-notebook
+    
+    - name: Run Python tests
+      run: |
+        # Test the main application
+        python -m pytest app.py
         
-        # Create __init__.py files
-        touch src/bio_hmm/__init__.py
-        touch tests/__init__.py
-    
-    - name: Create requirements.txt
-      run: |
-        cat > requirements.txt << 'EOL'
-        numpy>=1.20.0
-        scipy>=1.7.0
-        pandas>=2.2.3
-        biopython>=1.84
-        pytest>=8.3.3
-        pytest-cov>=6.0.0
-        python-dateutil>=2.9.0
-        pluggy>=1.5.0
-        packaging>=24.2
-        six>=1.16.0
-        EOL
-    
-    - name: Run tests
-      run: |
-        pip install -r requirements.txt
-        python -m pytest tests/ -v
+        # Convert and test notebook
+        jupyter nbconvert --to python GeneIdentification.ipynb
+        python -m pytest GeneIdentification.py
 
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Create source files if not exist
-      run: |
-        mkdir -p src/bio_hmm
-        if [ ! -f src/bio_hmm/model.py ]; then
-          cat > src/bio_hmm/model.py << 'EOL'
-          class HMMModel:
-              def __init__(self):
-                  self.states = []
-                  self.observations = []
-          EOL
-        fi
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -79,17 +54,47 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_TOKEN }}
     
+    - name: Create Dockerfile
+      run: |
+        cat > Dockerfile << 'EOL'
+        FROM python:3.10-slim
+
+        WORKDIR /app
+
+        # Install system dependencies
+        RUN apt-get update && apt-get install -y \
+            gcc \
+            g++ \
+            && rm -rf /var/lib/apt/lists/*
+
+        # Copy requirements first to leverage Docker cache
+        COPY Requirements.txt .
+        RUN pip install --no-cache-dir -r Requirements.txt
+
+        # Copy the project files
+        COPY app.py .
+        COPY GeneIdentification.ipynb .
+        COPY data_cleaned.csv .
+        COPY Data/ ./Data/
+
+        # Set Python path
+        ENV PYTHONPATH=/app
+
+        # Run the application
+        CMD ["python", "app.py"]
+        EOL
+    
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
         context: .
         push: ${{ github.event_name != 'pull_request' }}
         tags: |
-          ${{ secrets.DOCKER_USERNAME }}/gene-hmm:latest
-          ${{ secrets.DOCKER_USERNAME }}/gene-hmm:${{ github.sha }}
-        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-hmm:buildcache
-        cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-hmm:buildcache,mode=max
+          ${{ secrets.DOCKER_USERNAME }}/gene-identification:latest
+          ${{ secrets.DOCKER_USERNAME }}/gene-identification:${{ github.sha }}
+        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-identification:buildcache
+        cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-identification:buildcache,mode=max
     
     - name: Run smoke test
       run: |
-        docker run ${{ secrets.DOCKER_USERNAME }}/gene-hmm:${{ github.sha }} python -c "from bio_hmm.model import HMMModel; model = HMMModel(); print('Smoke test passed')"
+        docker run ${{ secrets.DOCKER_USERNAME }}/gene-identification:${{ github.sha }} python -c "import app; print('Smoke test passed')"
