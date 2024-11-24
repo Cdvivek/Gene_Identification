@@ -52,7 +52,7 @@ jobs:
     - name: Run Python tests
       run: |
         export PYTHONPATH="${PYTHONPATH}:${PWD}"
-        pytest test_app.py -v
+        pytest app.py -v
 
   build-and-push:
     needs: test
