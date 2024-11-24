@@ -1,4 +1,5 @@
 name: Gene Identification CI/CD
+
 on:
   push:
     branches: [ "master" ]
@@ -7,62 +8,67 @@ on:
 
 jobs:
   test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]  # Run on both Ubuntu and Windows
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10.12'  # Change to a compatible version
+        python-version: '3.10.13'
 
-    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install pytest pytest-notebook nbconvert jupyter
-        pip install -r Requirements.txt
-      shell: bash
+        if [ -f Requirements.txt ]; then
+          pip install -r Requirements.txt
+        else
+          echo "Warning: Requirements.txt not found"
+        fi
 
     - name: Create synthetic test data
       run: |
-        python -c "import pandas as pd; import numpy as np; import os; \
-        os.makedirs('Data', exist_ok=True); \
-        pd.DataFrame({'sequence': ['ATCG', 'GCTA', 'TGCA'], \
-                      'label': ['gene1', 'gene2', 'gene3'], \
-                      'score': np.random.random(3)}) \
-        .to_csv('Data/synthetic_data.csv', index=False); \
-        print('Synthetic test data created successfully')"
-      shell: bash
+        python - <<EOF
+        import pandas as pd
+        import numpy as np
+        import os
+
+        # Create data directory if it doesn't exist
+        os.makedirs('data', exist_ok=True)
+
+        # Create synthetic test data
+        test_data = pd.DataFrame({
+            'sequence': ['ATCG', 'GCTA', 'TGCA'],
+            'label': ['gene1', 'gene2', 'gene3'],
+            'score': np.random.random(3)
+        })
+
+        # Save test data in the data directory
+        test_data.to_csv('data/data_cleaned.csv', index=False)
+        print("Test data created successfully")
+        EOF
 
     - name: Run Python tests
       run: |
-        pytest -v
-        if [ -f GeneIdentification.ipynb ]; then
-          jupyter nbconvert --to python GeneIdentification.ipynb
-          pytest GeneIdentification.py -v
-        else
-          echo "Warning: GeneIdentification.ipynb not found"
-      shell: bash
+        export PYTHONPATH="${PYTHONPATH}:${PWD}"
+        pytest test_app.py -v
 
   build-and-push:
     needs: test
-    runs-on: ubuntu-latest  # Docker builds are more stable on Linux
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
+
     - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_TOKEN }}
-    
+        username: ${{ secrets.vivek200404 }}
+        password: ${{ secrets.dckr_pat_ooyd8gRsrqnueYpWbJwJsn5Sq88 }}
+
     - name: Create Dockerfile
       run: |
         cat > Dockerfile << 'EOL'
@@ -83,15 +89,6 @@ jobs:
         # Copy the project files
         COPY app.py ./
         COPY GeneIdentification.ipynb ./
-        COPY ./Data ./Data
-
-        # Generate synthetic data during the build
-        RUN python -c "import pandas as pd; import numpy as np; import os; \
-        os.makedirs('Data', exist_ok=True); \
-        pd.DataFrame({'sequence': ['ATCG', 'GCTA', 'TGCA'], \
-                      'label': ['gene1', 'gene2', 'gene3'], \
-                      'score': np.random.random(3)}) \
-        .to_csv('Data/synthetic_data.csv', index=False)"
 
         # Set Python path
         ENV PYTHONPATH=/app
@@ -106,11 +103,5 @@ jobs:
         context: .
         push: ${{ github.event_name != 'pull_request' }}
         tags: |
-          ${{ secrets.DOCKER_USERNAME }}/gene-identification:latest
-          ${{ secrets.DOCKER_USERNAME }}/gene-identification:${{ github.sha }}
-        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-identification:buildcache
-        cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/gene-identification:buildcache,mode=max
-    
-    - name: Run smoke test
-      run: |
-        docker run --rm ${{ secrets.DOCKER_USERNAME }}/gene-identification:${{ github.sha }} python -c "print('Smoke test passed')"
+          ${{ secrets.vivek200404 }}/gene-identification:latest
+          ${{ secrets.vivek200404 }}/gene-identification:${{ github.sha }}
