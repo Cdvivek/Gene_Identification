@@ -32,10 +32,6 @@ jobs:
         python - <<EOF
         import pandas as pd
         import numpy as np
-        import os
-
-        # Create data directory if it doesn't exist
-        os.makedirs('data', exist_ok=True)
 
         # Create synthetic test data
         test_data = pd.DataFrame({
@@ -44,8 +40,8 @@ jobs:
             'score': np.random.random(3)
         })
 
-        # Save test data in the data directory
-        test_data.to_csv('data/data_cleaned.csv', index=False)
+        # Save test data to the current directory
+        test_data.to_csv('data_cleaned.csv', index=False)
         print("Test data created successfully")
         EOF
 
@@ -83,12 +79,12 @@ jobs:
             && rm -rf /var/lib/apt/lists/*
 
         # Copy requirements first to leverage Docker cache
-        COPY Requirements.txt ./
+        COPY Requirements.txt ./Requirements.txt
         RUN pip install --no-cache-dir -r Requirements.txt
 
-        # Copy the project files
-        COPY app.py ./
-        COPY GeneIdentification.ipynb ./
+        # Copy the project files, excluding test data
+        COPY app.py ./app.py
+        COPY GeneIdentification.ipynb ./GeneIdentification.ipynb
 
         # Set Python path
         ENV PYTHONPATH=/app
